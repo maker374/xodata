@@ -149,12 +149,13 @@ class OData:
         self._version = version
 
     @property
-    def text(self) -> str:
-        if self._version == OData.V2:
+    def version_text(self) -> str:
+        version = self._version
+        if version == OData.V2:
             return "2.0"
-        if self._version == OData.V4:
+        if version == OData.V4:
             return "4.0"
-        if self._version == OData.V4_01:
+        if version == OData.V4_01:
             return "4.01"
         raise ValueError(f"Unsupported OData version: {self._version}")
 
@@ -165,13 +166,13 @@ class OData:
         return "@odata.type"
     
     def add_http_headers(self, request: Request) -> None:
-        self._check_version(self._version)
+        self._check_version()
         for header in ["OData-Version", "OData-MaxVersion"]:
-            request.headers[header] = self.text
+            request.headers[header] = self.version_text
 
     def path_value(self, value: Any, type: EdmType) -> Any:
         # TODO: V2/V4 differences
-        self._check_version(self._version)
+        self._check_version()
         if type.is_string:
             return self.quoted_string(value)
         if type.is_binary:
@@ -184,7 +185,7 @@ class OData:
 
     def body_value(self, value: Any, type: EdmType) -> Any:
         # TODO: V2/V4 differences
-        self._check_version(self._version)
+        self._check_version()
         if type.is_number or type.is_string:
             return value
         if type.is_binary:
@@ -195,8 +196,9 @@ class OData:
             return f"{type.name}'{str(value)}'"
         return str(value)
     
-    def _check_version(self, version: int) -> None:
-        if self._version == OData.V2:
+    def _check_version(self) -> None:
+        version = self._version
+        if version == OData.V2:
             raise NotImplementedError("OData V2 is not supported yet")
 
     def percent_encode(self, value: Any) -> str:
