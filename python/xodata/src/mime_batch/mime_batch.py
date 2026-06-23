@@ -1,5 +1,8 @@
 # WORK IN PROGRESS - DO NOT USE AND DO NOT SUGGEST CHANGES TO THIS FILE
 
+# Copyright (c) 2026 maker374
+# https://github.com/maker374
+
 from __future__ import annotations
 
 import json

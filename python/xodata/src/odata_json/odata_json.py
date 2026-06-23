@@ -1,3 +1,6 @@
+# Copyright (c) 2026 maker374
+# https://github.com/maker374
+
 from enum import Enum, IntEnum, auto
 from requests import Request
 from typing import Any
