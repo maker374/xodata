@@ -1,0 +1,20 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "circini-datatasks"
+version = "0.1.0"
+requires-python = ">=3.12"
+dependencies = [
+	"requests>=2.0",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=7.0"]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/odata_json", "src/mime_batch", "src/token_auth"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
