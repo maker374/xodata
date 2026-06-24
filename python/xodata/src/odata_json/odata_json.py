@@ -1,7 +1,7 @@
 # Copyright (c) 2026 maker374
-# https://github.com/maker374
+# https://github.com/maker374/xodata
 
-from enum import Enum, IntEnum, auto
+from enum import Enum, auto
 from requests import Request
 from typing import Any
 from urllib.parse import quote
@@ -131,18 +131,17 @@ class Edm:
     def Enum(cls, name: str, code: EdmTypeCode) -> EdmType:
         return EdmType(EdmTypeCode.Enum, name=name)
 
-class ODataVersion(IntEnum):
-    """OData protocol versions."""
+class ODataProperty:
+    pass
 
-    V2 = 2
-    V4 = 4
-    V4_01 = 401
+class ODataResource:
+    pass
 
 class OData:
     """Conversion of Python data to OData JSON format."""
 
-    V2 = 2
-    V4 = 4
+    V2 = 200
+    V4 = 400
     V4_01 = 401
 
     def __init__(self, version: int) -> None:
@@ -170,7 +169,27 @@ class OData:
         for header in ["OData-Version", "OData-MaxVersion"]:
             request.headers[header] = self.version_text
 
-    def path_value(self, value: Any, type: EdmType) -> Any:
+    def resource(self, name: str) -> ODataResource:
+        return ODataResource(self, name)
+    
+    def property(self, name: str, type: EdmType) -> ODataProperty:
+        return ODataProperty(self, name, type)
+    
+    def entity_with_key(self, entity_set: str, entity_key: list[tuple[str, Any, EdmType]]) -> str:
+        self._check_version()
+        version = self._version
+        entity_set_encoded = self.percent_encode(entity_set)
+        if version < OData.V4 or len(entity_key) != 1:
+            # e.g. V2 or multiple keys: use name=value pairs
+            key_values = [f"{key_name}={self.value_in_path(key_value, key_type)}" for key_name, key_value, key_type in entity_key]
+        else:
+            key_values = [self.value_in_path(key_value, key_type) for _, key_value, key_type in entity_key]
+        return f"{entity_set_encoded}({','.join(key_values)})"
+
+    def value_in_key(self, value: Any, type: EdmType) -> tuple[str, Any, EdmType]:
+        return (self.value_in_path(value, type), value, type)
+
+    def value_in_path(self, value: Any, type: EdmType) -> Any:
         # TODO: V2/V4 differences
         self._check_version()
         if type.is_string:
@@ -183,8 +202,10 @@ class OData:
             return f"{type.name}'{str(value)}'"
         return str(value)
 
-    def body_value(self, value: Any, type: EdmType) -> Any:
+    def value_in_body(self, value: Any, type: EdmType) -> Any:
         # TODO: V2/V4 differences
+        if value is None:
+            return None
         self._check_version()
         if type.is_number or type.is_string:
             return value
@@ -213,3 +234,23 @@ class OData:
     
     def to_base64url(self, data: bytes | bytearray) -> str:
         return base64.urlsafe_b64encode(bytes(data)).decode("ascii").rstrip("=")
+
+class ODataProperty:
+    def __init__(self, odata: OData, name: str, type: EdmType) -> None:
+        self.odata = odata
+        self.name = name
+        self.type = type
+
+    def body_value(self, value: Any) -> tuple[str, Any]:
+        return (self.name, self.odata.value_in_body(value, self.type))
+    
+    def key_value(self, value: Any) -> tuple[str, Any, EdmType]:
+        return (self.name, value, self.type)
+
+class ODataResource:
+    def __init__(self, odata: OData, name: str) -> None:
+        self.odata = odata
+        self.name = name
+    
+    def with_key(self, entity_key: list[tuple[str, Any, EdmType]]) -> str:
+        return self.odata.entity_with_key(self.name, entity_key)
