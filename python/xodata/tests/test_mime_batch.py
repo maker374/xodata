@@ -1,5 +1,81 @@
 from requests import Request, Response
-from mime_batch import BatchRequest, BatchResponse, format_batch_request, parse_batch_response
+from mime_batch import BatchRequest, BatchResponse, format_batch_request, parse_batch_response, post_batch_request
+
+
+class _StubSession:
+	def __init__(self, request_response: Response | None = None, post_response: Response | None = None) -> None:
+		self._request_response = request_response
+		self._post_response = post_response
+
+	def request(self, **kwargs):
+		return self._request_response
+
+	def post(self, *args, **kwargs):
+		return self._post_response
+
+
+def test_batch_request_is_full() -> None:
+	request = Request(method="GET", url="/odata/Customers")
+
+	unlimited = BatchRequest()
+	assert unlimited.is_full is False
+
+	batch = BatchRequest(part_limit=2)
+	assert batch.is_full is False
+	batch.append(request)
+	assert batch.is_full is False
+	batch.append(request)
+	assert batch.is_full is True
+
+
+def test_post_batch_request_propagates_part_limit_single_unbatched() -> None:
+	batch_request = BatchRequest(part_limit=5)
+	batch_request.append(Request(method="GET", url="/odata/Customers(1)"))
+
+	response = Response()
+	response.status_code = 200
+	response._content = b"{}"
+
+	session = _StubSession(request_response=response)
+	parsed = post_batch_request(
+		service_root_url="https://example.test",
+		session=session,
+		request=batch_request,
+		send_single_as_unbatched=True,
+	)
+
+	assert parsed.part_limit == batch_request.part_limit
+	assert len(parsed.parts) == 1
+
+
+def test_post_batch_request_propagates_part_limit_batch() -> None:
+	batch_request = BatchRequest(part_limit=5)
+	batch_request.append(Request(method="GET", url="/odata/Customers(1)"))
+
+	response = Response()
+	response.status_code = 200
+	response.headers["Content-Type"] = "multipart/mixed; boundary=B_123"
+	response._content = (
+		"--B_123\r\n"
+		"Content-Type: application/http\r\n"
+		"Content-Transfer-Encoding: binary\r\n"
+		"\r\n"
+		"HTTP/1.1 200 OK\r\n"
+		"Content-Type: application/json\r\n"
+		"\r\n"
+		"{}\r\n"
+		"--B_123--\r\n"
+	).encode("utf-8")
+
+	session = _StubSession(post_response=response)
+	parsed = post_batch_request(
+		service_root_url="https://example.test",
+		session=session,
+		request=batch_request,
+	)
+
+	assert parsed.part_limit == batch_request.part_limit
+	assert len(parsed.parts) == 1
 
 def test_format_batch_request_with_nested_change_set() -> None:
 	get_request = Request(

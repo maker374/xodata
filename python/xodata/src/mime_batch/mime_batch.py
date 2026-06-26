@@ -113,6 +113,10 @@ class BatchRequest:
         return len(self.parts)
 
     @property
+    def is_full(self) -> bool:
+        return self.part_limit is not None and self.part_count >= self.part_limit
+
+    @property
     def content_type(self) -> str:
         return f"multipart/mixed; boundary={self.boundary}"
 
@@ -314,7 +318,7 @@ def post_batch_request(
                 json=single_part.json,
             )
             response.raise_for_status()
-            parsed = BatchResponse()
+            parsed = BatchResponse(part_limit=request.part_limit)
             parsed.append(response)
             return parsed
         else:
@@ -329,6 +333,7 @@ def post_batch_request(
             if not content_type:
                 raise BatchError("Batch response missing Content-Type header")
             parsed = parse_batch_response(content_type, response.content)
+            parsed.part_limit = request.part_limit
             error_part_count = _count_error_response_parts(parsed)
             if check_response_part_count and len(parsed.parts) != len(request.parts):
                 raise BatchError(
