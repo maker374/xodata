@@ -73,7 +73,7 @@ class BatchRequest:
     def clear_parts(self) -> None:
         self.parts.clear()
 
-    def report_stats(self, print_stats: bool = True) -> dict[str, int | float]:
+    def report_stats(self, print_stats: bool = True, stats_separator: str = "; ") -> dict[str, int | float]:
         average_time_per_post = self.total_time / self.post_count if self.post_count else 0.0
         average_time_per_part = self.total_time / self.total_parts if self.total_parts else 0.0
         stats: dict[str, int | float] = {
@@ -85,12 +85,15 @@ class BatchRequest:
             "average_time_per_part": average_time_per_part,
         }
         if print_stats:
-            print(f"post_count: {self.post_count}")
-            print(f"total_parts: {self.total_parts}")
-            print(f"error_parts: {self.error_parts}")
-            print(f"total_time: {self.total_time:.6f} seconds")
-            print(f"average_time_per_post: {average_time_per_post:.6f} seconds")
-            print(f"average_time_per_part: {average_time_per_part:.6f} seconds")
+            lines = [
+                f"post_count: {self.post_count}",
+                f"total_parts: {self.total_parts}",
+                f"error_parts: {self.error_parts}",
+                f"total_time: {self.total_time:.6f} seconds",
+                f"average_time_per_post: {average_time_per_post:.6f} seconds",
+                f"average_time_per_part: {average_time_per_part:.6f} seconds",
+            ]
+            print(stats_separator.join(lines))
         return stats
 
     def auto_print_stats(self, interval: int) -> None:
@@ -99,13 +102,14 @@ class BatchRequest:
         current_bucket = (int(self.total_time) // interval) * interval
         if self._last_auto_report_bucket != current_bucket:
             self._last_auto_report_bucket = current_bucket
-            self.report_stats(print_stats=True)
+            if current_bucket > 0:
+                self.report_stats(print_stats=True)
         return None
 
-    def _record_post(self, part_count: int, error_part_count: int, elapsed_seconds: float) -> None:
+    def _record_post(self, posted_part_count: int, failed_part_count: int, elapsed_seconds: float) -> None:
         self.post_count += 1
-        self.total_parts += part_count
-        self.error_parts += error_part_count
+        self.total_parts += posted_part_count
+        self.error_parts += failed_part_count
         self.total_time += elapsed_seconds
 
     @property
@@ -268,7 +272,7 @@ def _count_error_response_parts(response: BatchResponse) -> int:
     error_count = 0
     for part in response.parts:
         if isinstance(part, Response):
-            if part.status_code >= 400:
+            if part.status_code >= 300: # since we don't follow redirects here, they are an error in the context of a batch response
                 error_count += 1
         elif isinstance(part, BatchResponse):
             error_count += _count_error_response_parts(part)
@@ -285,8 +289,8 @@ def post_batch_request(
 ) -> BatchResponse:
     """Send a batch request through a requests Session and parse the response."""
     start_time = perf_counter()
-    posted_part_count = request.part_count
-    error_part_count = 0
+    posted_part_count = 0
+    failed_part_count = 0
     headers = {
         "Content-Type": request.content_type,
         "Accept": "multipart/mixed",
@@ -320,6 +324,8 @@ def post_batch_request(
             response.raise_for_status()
             parsed = BatchResponse(part_limit=request.part_limit)
             parsed.append(response)
+            posted_part_count = 1
+            failed_part_count = 1 if response.status_code >= 300 else 0 # since we don't follow redirects here, they are an error in the context of a batch response
             return parsed
         else:
             batch_url = service_root_url.rstrip("/") + "/$batch"
@@ -334,14 +340,15 @@ def post_batch_request(
                 raise BatchError("Batch response missing Content-Type header")
             parsed = parse_batch_response(content_type, response.content)
             parsed.part_limit = request.part_limit
-            error_part_count = _count_error_response_parts(parsed)
+            posted_part_count = request.part_count
+            failed_part_count = _count_error_response_parts(parsed)
             if check_response_part_count and len(parsed.parts) != len(request.parts):
                 raise BatchError(
                     f"Batch response part count mismatch: expected {len(request.parts)}, received {len(parsed.parts)}"
                 )
             return parsed
     finally:
-        request._record_post(posted_part_count, error_part_count, perf_counter() - start_time)
+        request._record_post(posted_part_count, failed_part_count, perf_counter() - start_time)
         if auto_print_stats_interval > 0:
             request.auto_print_stats(interval=auto_print_stats_interval)
 
