@@ -168,6 +168,9 @@ class OData:
         self._check_version()
         for header in ["OData-Version", "OData-MaxVersion"]:
             request.headers[header] = self.version_text
+        method = request.method.upper()
+        if method in ["POST", "PUT", "PATCH"]:
+            request.headers["Content-Type"] = "application/json;odata.metadata=minimal"
 
     def resource(self, name: str) -> ODataResource:
         return ODataResource(self, name)
