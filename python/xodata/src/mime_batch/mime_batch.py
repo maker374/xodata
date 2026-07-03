@@ -56,6 +56,7 @@ class BatchRequest:
     parts: list[PartRequest] = field(default_factory=list)
     sources: list[Any] = field(default_factory=list)
     boundary: str = ""
+    worker_threads: int = 1 # May be useful in stats, but isn't used inside this class.
     started_at: datetime.datetime = field(default_factory=lambda: datetime.datetime.now(datetime.timezone.utc))
     finished_at: datetime.datetime = field(init=False)
     part_limit: int | None = None
@@ -88,6 +89,7 @@ class BatchRequest:
         self.sources.clear()
     
     def add_stats(self, to: BatchRequest, auto_print_stats_interval: int = 0) -> None:
+        to.worker_threads = max(to.worker_threads, self.worker_threads)
         to.post_count += self.post_count
         to.total_parts += self.total_parts
         to.error_parts += self.error_parts
@@ -99,6 +101,7 @@ class BatchRequest:
         self, print_stats: bool = True, final_stats: bool = True, stats_separator: str = "; "
     ) -> dict[str, int | float | datetime.datetime]:
         stats: dict[str, int | float | datetime.datetime] = {
+            "worker_threads": self.worker_threads,
             "post_count": self.post_count,
             "total_parts": self.total_parts,
             "error_parts": self.error_parts,
@@ -110,6 +113,7 @@ class BatchRequest:
         }
         if print_stats:
             lines = [
+                f"worker_threads: {self.worker_threads}",
                 f"post_count: {self.post_count}",
                 f"total_parts: {self.total_parts}",
                 f"error_parts: {self.error_parts}",
