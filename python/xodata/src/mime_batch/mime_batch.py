@@ -102,8 +102,8 @@ class BatchRequest:
         self, print_stats: bool = True, final_stats: bool = True, stats_separator: str = "; "
     ) -> dict[str, int | float | datetime.datetime]:
         stats: dict[str, int | float | datetime.datetime] = {
+            "batch_limit": self.part_limit,
             "max_threads": self.max_threads,
-            "batch_size": self.part_limit,
             "post_count": self.post_count,
             "total_parts": self.total_parts,
             "error_parts": self.error_parts,
@@ -115,8 +115,8 @@ class BatchRequest:
         }
         if print_stats:
             lines = [
+                f"batch_limit: {self.part_limit}",
                 f"max_threads: {self.max_threads}",
-                f"batch_size: {self.part_limit}",
                 f"post_count: {self.post_count}",
                 f"total_parts: {self.total_parts}",
                 f"error_parts: {self.error_parts}",
