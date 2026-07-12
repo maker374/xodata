@@ -1,5 +1,7 @@
 # Copyright (c) 2026 maker374
 # https://github.com/maker374/xodata
+# Apache License 2.0
+# Updated 2024-07-13
 
 from enum import Enum, auto
 from requests import Request

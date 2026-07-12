@@ -1,5 +1,7 @@
 # Copyright (c) 2026 maker374
 # https://github.com/maker374/xodata
+# Apache License 2.0
+# Updated 2024-07-13
 
 from __future__ import annotations
 
@@ -14,7 +16,7 @@ from time import perf_counter
 from typing import Any, Mapping, Sequence, TypeAlias
 from uuid import uuid4
 
-from requests import Request, Response, Session
+from requests import Request, RequestException, Response, Session
 from requests.structures import CaseInsensitiveDict
 
 PartRequest: TypeAlias = "Request | BatchRequest"
@@ -328,8 +330,30 @@ def post_batch_request(
     check_response_part_count: bool = True,
     odata_continue_on_error: bool = True,
     send_single_as_unbatched: bool = False,
+    cascade_failure_to_parts: bool = False
 ) -> BatchResponse:
     """Send a batch request through a requests Session and parse the response."""
+    if cascade_failure_to_parts:
+        try:
+            return post_batch_request(
+                service_root_url=service_root_url,
+                session=session,
+                request=request,
+                auto_print_stats_interval=auto_print_stats_interval,
+                check_response_part_count=check_response_part_count,
+                odata_continue_on_error=odata_continue_on_error,
+                send_single_as_unbatched=send_single_as_unbatched,
+                cascade_failure_to_parts=False
+            )
+        except RequestException as error:
+            failed = BatchResponse(max_parts=request.max_parts)
+            response = error.response if error.response is not None else Response()
+            if response.status_code == 0:
+                response.status_code = 900
+                response.reason = str(error)
+            for _ in request.parts:
+                failed.append(response)
+            return failed
     start_time = perf_counter()
     posted_part_count = 0
     failed_part_count = 0
