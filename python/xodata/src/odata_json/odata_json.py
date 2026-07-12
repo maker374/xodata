@@ -144,6 +144,9 @@ class OData:
     V4 = 400
     V4_01 = 401
 
+    EntitySet = "EntitySet"
+    Singleton = "Singleton"
+
     def __init__(self, version: int) -> None:
         self._version = version
 
@@ -172,8 +175,8 @@ class OData:
         if method in ["POST", "PUT", "PATCH"]:
             request.headers["Content-Type"] = "application/json;odata.metadata=minimal"
 
-    def resource(self, name: str) -> ODataResource:
-        return ODataResource(self, name)
+    def resource(self, name: str, kind: str | None = None) -> ODataResource:
+        return ODataResource(self, name, kind)
     
     def property(self, name: str, type: EdmType) -> ODataProperty:
         return ODataProperty(self, name, type)
@@ -251,9 +254,10 @@ class ODataProperty:
         return (self.name, value, self.type)
 
 class ODataResource:
-    def __init__(self, odata: OData, name: str) -> None:
+    def __init__(self, odata: OData, name: str, kind: str | None = None) -> None:
         self.odata = odata
         self.name = name
+        self.kind = kind
     
     def with_key(self, entity_key: list[tuple[str, Any, EdmType]]) -> str:
         return self.odata.entity_with_key(self.name, entity_key)
