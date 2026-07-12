@@ -56,10 +56,11 @@ class BatchRequest:
     parts: list[PartRequest] = field(default_factory=list)
     sources: list[Any] = field(default_factory=list)
     boundary: str = ""
-    max_threads: int = 1 # May be useful in stats, but isn't used inside this class.
     started_at: datetime.datetime = field(default_factory=lambda: datetime.datetime.now(datetime.timezone.utc))
     finished_at: datetime.datetime = field(init=False)
     max_parts: int | None = None
+    max_threads: int = 1 # For logging and stats purposes only.
+    step_name: str | None = None # For logging and stats purposes only.
     post_count: int = field(default=0, init=False, repr=False)
     total_parts: int = field(default=0, init=False, repr=False)
     error_parts: int = field(default=0, init=False, repr=False)
@@ -89,7 +90,7 @@ class BatchRequest:
         self.sources.clear()
     
     def add_stats(self, to: BatchRequest, auto_print_stats_interval: int = 0) -> None:
-        to.max_parts = max(to.max_parts or 0, self.max_parts or 0)
+        to.max_parts = max(to.max_parts or 0, self.max_parts or 0) if to.max_parts is not None and self.max_parts is not None else None
         to.max_threads = max(to.max_threads, self.max_threads)
         to.post_count += self.post_count
         to.total_parts += self.total_parts
@@ -102,31 +103,31 @@ class BatchRequest:
         self, print_stats: bool = True, final_stats: bool = True, stats_separator: str = "; "
     ) -> dict[str, int | float | datetime.datetime]:
         stats: dict[str, int | float | datetime.datetime] = {
-            "batch_limit": self.max_parts or 0,
-            "max_threads": self.max_threads,
-            "post_count": self.post_count,
-            "total_parts": self.total_parts,
-            "error_parts": self.error_parts,
-            "total_elapsed_time": _decimal_6(self.total_elapsed_time),
-            "average_time_per_post": _decimal_6(self.average_time_per_post),
-            "average_time_per_part": _decimal_6(self.average_time_per_part),
-            "started_at": self.started_at,
-            "finished_at": self.finished_at,
+            "batch_size_config": self.max_parts or 0,
+            "thread_count_config": self.max_threads,
+            "posted_batch_count": self.post_count,
+            "total_request_count": self.total_parts,
+            "failed_request_count": self.error_parts,
+            "total_elapsed_seconds": _decimal_6(self.total_elapsed_time),
+            "average_batch_seconds": _decimal_6(self.average_time_per_post),
+            "average_part_seconds": _decimal_6(self.average_time_per_part),
+            "started_at_datetime": self.started_at,
+            "finished_at_datetime": self.finished_at,
         }
         if print_stats:
             lines = [
-                f"batch_limit: {self.max_parts or 0}",
-                f"max_threads: {self.max_threads}",
-                f"post_count: {self.post_count}",
-                f"total_parts: {self.total_parts}",
-                f"error_parts: {self.error_parts}",
-                f"total_elapsed_time: {self.total_elapsed_time:.6f} seconds",
-                f"average_time_per_post: {self.average_time_per_post:.6f} seconds",
-                f"average_time_per_part: {self.average_time_per_part:.6f} seconds",
+                f"batch_size_config: {self.max_parts or 0}",
+                f"thread_count_config: {self.max_threads}",
+                f"posted_batch_count: {self.post_count}",
+                f"total_request_count: {self.total_parts}",
+                f"failed_request_count: {self.error_parts}",
+                f"total_elapsed_seconds: {self.total_elapsed_time:.6f} seconds",
+                f"average_batch_seconds: {self.average_time_per_post:.6f} seconds",
+                f"average_part_seconds: {self.average_time_per_part:.6f} seconds",
             ]
             if (final_stats):
-                lines.append(f"started_at: {self.started_at.isoformat()}")
-                lines.append(f"finished_at: {self.finished_at.isoformat()}")
+                lines.append(f"started_at_datetime: {self.started_at.isoformat()}")
+                lines.append(f"finished_at_datetime: {self.finished_at.isoformat()}")
             progress_prefix = "Progress: " if not final_stats else ""
             print(progress_prefix + stats_separator.join(lines))
         return stats
