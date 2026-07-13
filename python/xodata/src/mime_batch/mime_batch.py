@@ -92,6 +92,7 @@ class BatchRequest:
         self.sources.clear()
     
     def add_stats(self, to: BatchRequest, auto_print_stats_interval: int = 0) -> None:
+        to.step_name = to.step_name or self.step_name
         to.max_parts = max(to.max_parts or 0, self.max_parts or 0) if to.max_parts is not None and self.max_parts is not None else None
         to.max_threads = max(to.max_threads, self.max_threads)
         to.post_count += self.post_count
@@ -105,6 +106,7 @@ class BatchRequest:
         self, print_stats: bool = True, final_stats: bool = True, stats_separator: str = "; "
     ) -> dict[str, int | float | datetime.datetime]:
         stats: dict[str, int | float | datetime.datetime] = {
+            "step_name": self.step_name or "",
             "batch_size_config": self.max_parts or 0,
             "thread_count_config": self.max_threads,
             "posted_batch_count": self.post_count,
@@ -112,22 +114,22 @@ class BatchRequest:
             "failed_request_count": self.error_parts,
             "total_elapsed_seconds": _decimal_6(self.total_elapsed_time),
             "average_batch_seconds": _decimal_6(self.average_time_per_post),
-            "average_part_seconds": _decimal_6(self.average_time_per_part),
+            "average_request_seconds": _decimal_6(self.average_time_per_part),
             "started_at_datetime": self.started_at,
             "finished_at_datetime": self.finished_at,
         }
         if print_stats:
             lines = [
-                f"batch_size_config: {self.max_parts or 0}",
-                f"thread_count_config: {self.max_threads}",
                 f"posted_batch_count: {self.post_count}",
                 f"total_request_count: {self.total_parts}",
                 f"failed_request_count: {self.error_parts}",
                 f"total_elapsed_seconds: {self.total_elapsed_time:.6f} seconds",
                 f"average_batch_seconds: {self.average_time_per_post:.6f} seconds",
-                f"average_part_seconds: {self.average_time_per_part:.6f} seconds",
+                f"average_request_seconds: {self.average_time_per_part:.6f} seconds",
             ]
             if (final_stats):
+                lines.insert(0, f"thread_count_config: {self.max_threads}")
+                lines.insert(0, f"batch_size_config: {self.max_parts or 0}")
                 lines.append(f"started_at_datetime: {self.started_at.isoformat()}")
                 lines.append(f"finished_at_datetime: {self.finished_at.isoformat()}")
             progress_prefix = "Progress: " if not final_stats else ""
