@@ -1,0 +1,14 @@
+#!/bin/sh
+
+set -eu
+
+cd "$(dirname "$0")"
+
+if [ ! -x .venv/bin/python ]; then
+    echo "Creating virtual environment..."
+    python3.12 -m venv .venv
+    .venv/bin/python -m pip install -U pip
+    .venv/bin/pip install -e ".[test]"
+fi
+
+exec .venv/bin/python -m pytest "$@"

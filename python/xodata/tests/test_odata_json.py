@@ -7,24 +7,24 @@ class TestOData:
 
     def test_version_constants(self):
         """Test OData version constants."""
-        assert OData.V2 == 2
-        assert OData.V4 == 4
+        assert OData.V2 == 200
+        assert OData.V4 == 400
         assert OData.V4_01 == 401
 
-    def test_text_property_v2(self):
-        """Test text property for V2."""
+    def test_version_text_property_v2(self):
+        """Test version_text property for V2."""
         odata = OData(OData.V2)
-        assert odata.text == "2.0"
+        assert odata.version_text == "2.0"
 
-    def test_text_property_v4(self):
-        """Test text property for V4."""
+    def test_version_text_property_v4(self):
+        """Test version_text property for V4."""
         odata = OData(OData.V4)
-        assert odata.text == "4.0"
+        assert odata.version_text == "4.0"
 
-    def test_text_property_v4_01(self):
-        """Test text property for V4.01."""
+    def test_version_text_property_v4_01(self):
+        """Test version_text property for V4.01."""
         odata = OData(OData.V4_01)
-        assert odata.text == "4.01"
+        assert odata.version_text == "4.01"
 
     def test_init(self):
         """Test OData initialization."""
@@ -87,64 +87,64 @@ class TestOData:
         assert "=" not in result
 
     def test_path_value_string(self):
-        """Test path_value with string type."""
+        """Test value_in_path with string type."""
         odata = OData(OData.V4)
-        result = odata.path_value("test", Edm.String)
+        result = odata.value_in_path("test", Edm.String)
         assert result == "'test'"
 
     def test_path_value_binary(self):
-        """Test path_value with binary type."""
+        """Test value_in_path with binary type."""
         odata = OData(OData.V4)
-        result = odata.path_value(b"hello", Edm.Binary)
+        result = odata.value_in_path(b"hello", Edm.Binary)
         assert result.startswith("binary'")
         assert result.endswith("'")
 
     def test_path_value_binary_invalid_type(self):
-        """Test path_value with binary type and invalid data."""
+        """Test value_in_path with binary type and invalid data."""
         odata = OData(OData.V4)
         with pytest.raises(ValueError, match="Expected bytes or bytearray"):
-            odata.path_value("not bytes", Edm.Binary)
+            odata.value_in_path("not bytes", Edm.Binary)
 
     def test_path_value_enum(self):
-        """Test path_value with enum type."""
+        """Test value_in_path with enum type."""
         odata = OData(OData.V4)
         enum_type = Edm.Enum("Status", EdmTypeCode.Enum)
-        result = odata.path_value("Active", enum_type)
+        result = odata.value_in_path("Active", enum_type)
         assert "'" in result
 
     def test_path_value_number(self):
-        """Test path_value with number type."""
+        """Test value_in_path with number type."""
         odata = OData(OData.V4)
-        result = odata.path_value(42, Edm.Int32)
+        result = odata.value_in_path(42, Edm.Int32)
         assert result == "42"
 
     def test_body_value_string(self):
-        """Test body_value with string type."""
+        """Test value_in_body with string type."""
         odata = OData(OData.V4)
-        result = odata.body_value("test", Edm.String)
+        result = odata.value_in_body("test", Edm.String)
         assert result == "test"
 
     def test_body_value_number(self):
-        """Test body_value with number type."""
+        """Test value_in_body with number type."""
         odata = OData(OData.V4)
-        result = odata.body_value(42, Edm.Int32)
+        result = odata.value_in_body(42, Edm.Int32)
         assert result == 42
 
     def test_body_value_binary(self):
-        """Test body_value with binary type."""
+        """Test value_in_body with binary type."""
         odata = OData(OData.V4)
-        result = odata.body_value(b"hello", Edm.Binary)
+        result = odata.value_in_body(b"hello", Edm.Binary)
         assert result == "aGVsbG8"
 
     def test_body_value_binary_invalid_type(self):
-        """Test body_value with binary type and invalid data."""
+        """Test value_in_body with binary type and invalid data."""
         odata = OData(OData.V4)
         with pytest.raises(ValueError, match="Expected bytes or bytearray"):
-            odata.body_value("not bytes", Edm.Binary)
+            odata.value_in_body("not bytes", Edm.Binary)
 
     def test_body_value_enum(self):
-        """Test body_value with enum type."""
+        """Test value_in_body with enum type."""
         odata = OData(OData.V4)
         enum_type = Edm.Enum("Status", EdmTypeCode.Enum)
-        result = odata.body_value("Active", enum_type)
+        result = odata.value_in_body("Active", enum_type)
         assert "'" in result

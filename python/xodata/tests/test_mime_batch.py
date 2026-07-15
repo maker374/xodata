@@ -20,7 +20,7 @@ def test_batch_request_is_full() -> None:
 	unlimited = BatchRequest()
 	assert unlimited.is_full is False
 
-	batch = BatchRequest(part_limit=2)
+	batch = BatchRequest(max_parts=2)
 	assert batch.is_full is False
 	batch.append(request)
 	assert batch.is_full is False
@@ -29,7 +29,7 @@ def test_batch_request_is_full() -> None:
 
 
 def test_post_batch_request_propagates_part_limit_single_unbatched() -> None:
-	batch_request = BatchRequest(part_limit=5)
+	batch_request = BatchRequest(max_parts=5)
 	batch_request.append(Request(method="GET", url="/odata/Customers(1)"))
 
 	response = Response()
@@ -44,12 +44,12 @@ def test_post_batch_request_propagates_part_limit_single_unbatched() -> None:
 		send_single_as_unbatched=True,
 	)
 
-	assert parsed.part_limit == batch_request.part_limit
+	assert parsed.max_parts == batch_request.max_parts
 	assert len(parsed.parts) == 1
 
 
 def test_post_batch_request_propagates_part_limit_batch() -> None:
-	batch_request = BatchRequest(part_limit=5)
+	batch_request = BatchRequest(max_parts=5)
 	batch_request.append(Request(method="GET", url="/odata/Customers(1)"))
 
 	response = Response()
@@ -74,7 +74,7 @@ def test_post_batch_request_propagates_part_limit_batch() -> None:
 		request=batch_request,
 	)
 
-	assert parsed.part_limit == batch_request.part_limit
+	assert parsed.max_parts == batch_request.max_parts
 	assert len(parsed.parts) == 1
 
 def test_format_batch_request_with_nested_change_set() -> None:
