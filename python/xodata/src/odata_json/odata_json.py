@@ -1,8 +1,9 @@
 # Copyright (c) 2026 maker374
 # https://github.com/maker374/xodata
 # Apache License 2.0
-# Updated 2024-07-13
+# Updated 2024-07-21
 
+from datetime import datetime, time
 from enum import Enum, auto
 from requests import Request
 from typing import Any
@@ -208,6 +209,15 @@ class OData:
             raise ValueError(f"Expected bytes or bytearray for binary type, got {str(type)}")
         if type.is_enum:
             return f"{type.name}'{str(value)}'"
+        if (type.code == EdmTypeCode.DateTime and isinstance(value, datetime)):
+            if value.tzinfo is not None:
+                raise ValueError(f"value_in_path: DateTime value must not have zone offset (found {value})")
+            return self.percent_encode(value.isoformat())  # colons must be percent-encoded in path segments
+        if (type.code == EdmTypeCode.DateTimeOffset and isinstance(value, datetime)):
+            # Note: colons must be percent-encoded in path segments
+            if value.tzinfo is None:  # some conversion layer (e.g. DB) might have dropped UTC offset
+                return self.percent_encode(value.isoformat() + "Z")
+            return self.percent_encode(value.isoformat())
         return str(value)
 
     def value_in_body(self, value: Any, type: EdmType) -> Any:
@@ -223,6 +233,15 @@ class OData:
             raise ValueError(f"Expected bytes or bytearray for binary type, got {str(type)}")
         if type.is_enum:
             return f"{type.name}'{str(value)}'"
+        if (type.code == EdmTypeCode.DateTime and isinstance(value, datetime)):
+            if value.tzinfo is not None:
+                raise ValueError(f"value_in_body: DateTime value must not have zone offset (found {value})")
+            return self.percent_encode(value.isoformat())  # colons must be percent-encoded in path segments
+        if (type.code == EdmTypeCode.DateTimeOffset and isinstance(value, datetime)):
+            # Note: colons must be percent-encoded in path segments
+            if value.tzinfo is None:  # some conversion layer (e.g. DB) might have dropped UTC offset
+                return value.isoformat() + "Z"
+            return value.isoformat()
         return str(value)
     
     def _check_version(self) -> None:
@@ -242,6 +261,43 @@ class OData:
     
     def to_base64url(self, data: bytes | bytearray) -> str:
         return base64.urlsafe_b64encode(bytes(data)).decode("ascii").rstrip("=")
+
+    def verify_patch(self, patch_body: dict, get_response: dict, verify_props: list[ODataProperty]) -> list[str]:
+        """Compare a PATCH request body against a GET response body.
+        Returns a list of mismatch descriptions. An empty list means all patched
+        properties match the retrieved values. ISO 8601 date/time strings are
+        normalized before comparison (covers DateTimeOffset timezone variants
+        such as Z vs +00:00).
+        """
+        mismatches = []
+        for key, expected in patch_body.items():
+            if key not in get_response:
+                mismatches.append(f"{key}: not present in GET response")
+                continue
+            type = next((p.type for p in verify_props if p.name == key), None)
+            if type is None:
+                raise RuntimeError(f"verify_patch: property {key} not found in verify_props")
+            received = get_response[key]
+            if not self._patch_values_equal(expected, received, type):
+                mismatches.append(f"{key}: expected {expected}, received {received}")
+        return mismatches
+
+    def _patch_values_equal(self, a: Any, b: Any, type: EdmType) -> bool:
+        if a == b:
+            return True
+        if a is None or b is None:
+            return False
+        tc = type.code
+        if tc == EdmTypeCode.DateTime or tc == EdmTypeCode.DateTimeOffset:
+            da = datetime.fromisoformat(str(a))
+            db = datetime.fromisoformat(str(b))
+            return da == db
+        if tc == EdmTypeCode.TimeOfDay:
+            ta = time.fromisoformat(str(a))
+            tb = time.fromisoformat(str(b))
+            return ta == tb
+        # TODO: Edm.Duration, Edm.Geo*
+        return False
 
 class ODataProperty:
     def __init__(self, odata: OData, name: str, type: EdmType) -> None:

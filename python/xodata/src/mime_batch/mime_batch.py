@@ -1,7 +1,7 @@
 # Copyright (c) 2026 maker374
 # https://github.com/maker374/xodata
 # Apache License 2.0
-# Updated 2024-07-13
+# Updated 2024-07-21
 
 from __future__ import annotations
 
@@ -344,6 +344,7 @@ def post_batch_request(
     cascade_failure_to_parts: bool = False
 ) -> BatchResponse:
     """Send a batch request through a requests Session and parse the response."""
+    start_time = perf_counter()
     if cascade_failure_to_parts:
         try:
             return post_batch_request(
@@ -363,9 +364,17 @@ def post_batch_request(
                 response.status_code = 900
                 response.reason = str(error)
             for _ in request.parts:
-                failed.append(response)
-            return failed
-    start_time = perf_counter()
+                failed_response = Response()
+                failed_response.status_code = response.status_code
+                failed_response.reason = response.reason
+                failed_response._content = response.content
+                failed.append(failed_response)
+            request._record_post(
+                posted_part_count=len(request.parts),
+                failed_part_count=len(request.parts),
+                elapsed_seconds=perf_counter() - start_time,
+            )
+        return failed
     posted_part_count = 0
     failed_part_count = 0
     headers = {
