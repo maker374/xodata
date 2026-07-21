@@ -55,6 +55,7 @@ class EdmTypeCode(Enum):
     Single = auto()
     Stream = auto()
     String = auto()
+    Time = auto()
     TimeOfDay = auto()
 
 class EdmType:
@@ -138,6 +139,7 @@ class Edm:
     Single = EdmType(EdmTypeCode.Single)
     Stream = EdmType(EdmTypeCode.Stream)
     String = EdmType(EdmTypeCode.String)
+    Time = EdmType(EdmTypeCode.Time)
     TimeOfDay = EdmType(EdmTypeCode.TimeOfDay)
 
     @classmethod
