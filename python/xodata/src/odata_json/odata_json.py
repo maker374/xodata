@@ -3,9 +3,11 @@
 # Apache License 2.0
 # Updated 2024-07-23
 
-from datetime import datetime, time
+from datetime import datetime, date, time
 from decimal import Decimal
 from enum import Enum, auto
+import math
+import uuid
 from requests import Request
 from typing import Any
 from urllib.parse import quote
@@ -99,6 +101,10 @@ class EdmType:
     @property
     def is_enum(self) -> bool:
         return self.code == EdmTypeCode.Enum
+    
+    @property
+    def is_guid(self) -> bool:
+        return self.code == EdmTypeCode.Guid
 
     def __repr__(self) -> str:
         if (self.name):
@@ -153,7 +159,7 @@ class ODataResource:
     pass
 
 class OData:
-    """Conversion of Python data to OData JSON format."""
+    """Conversion of Python data to OData JSON format and URL paths."""
 
     V2 = 200
     V4 = 400
@@ -200,12 +206,16 @@ class OData:
         return "@odata.type"
     
     def add_http_headers(self, request: Request) -> None:
-        self._check_version()
-        for header in ["OData-Version", "OData-MaxVersion"]:
+        version_headers = ["OData-Version", "OData-MaxVersion"] if self._version >= OData.V4 else ["DataServiceVersion", "MaxDataServiceVersion"]
+        for header in version_headers:
             request.headers[header] = self.version_text
+        minimal_metadata = ";odata.metadata=minimal" if self._version >= OData.V4 else ""
+        application_json = f"application/json{minimal_metadata}"
         method = request.method.upper()
         if method in ["POST", "PUT", "PATCH"]:
-            request.headers["Content-Type"] = "application/json;odata.metadata=minimal"
+            request.headers["Content-Type"] = application_json
+        if method != "DELETE":
+            request.headers["Accept"] = application_json
 
     def resource(self, name: str, kind: str | None = None) -> ODataResource:
         return ODataResource(self, name, kind)
@@ -214,7 +224,6 @@ class OData:
         return ODataProperty(self, name, type)
     
     def entity_with_key(self, entity_set: str, entity_key: list[tuple[str, Any, EdmType]]) -> str:
-        self._check_version()
         version = self._version
         entity_set_encoded = self.percent_encode(entity_set)
         if version < OData.V4 or len(entity_key) != 1:
@@ -228,67 +237,140 @@ class OData:
         return (self.value_in_path(value, type), value, type)
 
     def value_in_path(self, value: Any, type: EdmType) -> Any:
-        # TODO: validate for V2/V4 differences
-        self._check_version()
+        tc = type.code
+        if value is None:
+            return "null"
+        if type.is_number:
+            if self._version < OData.V4:
+                if tc == EdmTypeCode.Int64:
+                    value = int(value)
+                    return str(value) + "L"
+                if tc == EdmTypeCode.Decimal:
+                    value = Decimal(value)
+                    return str(value) + "M"
+                if tc == EdmTypeCode.Single:
+                    value = float(value)
+                    if isinstance(value, float):
+                        special = self._float_nan_inf(value)
+                        if special is not None:
+                            return special + "F"
+                    return str(value) + "F"
+                if tc == EdmTypeCode.Double:
+                    value = float(value)
+                    if isinstance(value, float):
+                        special = self._float_nan_inf(value)
+                        if special is not None:
+                            return special + "D"
+                    return str(value) + "D"
+                value = int(value)
+                return str(value)
+            else:
+                # V4 and later: all numbers are plain in paths
+                if tc == EdmTypeCode.Decimal:
+                    value = Decimal(value)
+                    return str(value)
+                if tc == EdmTypeCode.Single or tc == EdmTypeCode.Double:
+                    value = float(value)
+                    special = self._float_nan_inf(value)
+                    if special is not None:
+                        return special
+                    return str(value)
+                value = int(value)
+                return str(value)
         if type.is_string:
+            value = str(value)
             return self.quoted_string(value)
         if type.is_binary:
             if isinstance(value, (bytes, bytearray)):
+                if self._version < OData.V4:
+                    return "X'" + value.hex().upper() + "'"
                 return f"binary'{self.to_base64url(value)}'"
             raise ValueError(f"Expected bytes or bytearray for binary type, got {str(type)}")
         if type.is_enum:
-            return f"{type.name}'{str(value)}'"
-        tc = type.code
-        if tc == EdmTypeCode.DateTime and isinstance(value, datetime):
-            if value.tzinfo is not None:
-                raise ValueError(f"value_in_path: DateTime value must not have zone offset (found {value})")
-            return self.percent_encode(value.isoformat())  # colons must be percent-encoded in path segments
-        if tc == EdmTypeCode.DateTimeOffset and isinstance(value, datetime):
-            # Note: colons must be percent-encoded in path segments
-            if value.tzinfo is None:  # some conversion layer (e.g. DB) might have dropped UTC offset
-                return self.percent_encode(value.isoformat() + "Z")
-            return self.percent_encode(value.isoformat())
-        if tc == EdmTypeCode.Duration or tc == EdmTypeCode.Time:
-            return self.value_in_body(value, type)
-        return str(value)
+            return f"{self.percent_encode(type.name)}'{str(value)}'"
+        if tc == EdmTypeCode.DateTime or tc == EdmTypeCode.DateTimeOffset or tc == EdmTypeCode.TimeOfDay:
+            # colons in time component need percent encoding in request path, but not in request body
+            text = self.percent_encode(self.value_in_body(value, type))
+        else:
+            text = self.value_in_body(value, type)
+        if self._version < OData.V4:
+            if tc == EdmTypeCode.DateTime:
+                return f"datetime'{text}'"
+            if tc == EdmTypeCode.DateTimeOffset:
+                return f"datetimeoffset'{text}'"
+            if tc == EdmTypeCode.Date:
+                return f"date'{text}'"  # V2 didn't support Edm.Date, but just in case
+            if tc == EdmTypeCode.Time:
+                return f"time'{text}'"
+            if tc == EdmTypeCode.Guid:
+                return f"guid'{text}'"
+        return text
 
     def value_in_body(self, value: Any, type: EdmType) -> Any:
-        # TODO: validate for V2/V4 differences
+        tc = type.code
         if value is None:
             return None
-        self._check_version()
-        if type.is_number or type.is_string:
+        if type.is_number:
+            if isinstance(value, float):
+                special = self._float_nan_inf(value)
+                if special is not None:
+                    return special
+            if self._version < OData.V4:
+                if tc == EdmTypeCode.Int16 or tc == EdmTypeCode.Int32:
+                    return int(value)
+                return str(value)
+            # Consider adding an option for IEEE754Compatible
+            # which encodes certain numbers as strings to
+            # avoid precision loss in JavaScript agents.
             return value
+        if type.is_string:
+            return str(value)
         if type.is_binary:
-            if isinstance(value, (bytes, bytearray)):
-                return self.to_base64url(value)
-            raise ValueError(f"Expected bytes or bytearray for binary type, got {str(type)}")
+            if not isinstance(value, (bytes, bytearray)):
+                raise ValueError(f"Expected bytes or bytearray for binary type, got {value.__class__.__name__}")
+            if self._version < OData.V4:
+                return self.to_base64(value)
+            return self.to_base64url(value)
         if type.is_enum:
-            return f"{type.name}'{str(value)}'"
-        tc = type.code
-        if tc == EdmTypeCode.DateTime and isinstance(value, datetime):
+            return f"{self.percent_encode(type.name)}'{str(value)}'"
+        if type.is_guid:
+            if not isinstance(value, uuid.UUID):
+                if isinstance(value, (bytes, bytearray)):
+                    value = uuid.UUID(bytes=bytes(value))
+                elif isinstance(value, str) and len(str(value)) == 32:
+                    value = uuid.UUID(hex=str(value))
+                else:
+                    value = uuid.UUID(str(value))
+            return str(value)
+        if tc == EdmTypeCode.Boolean:
+            return "true" if bool(value) else "false"
+        if tc == EdmTypeCode.Date:
+            if isinstance(value, datetime):
+                value = value.date()
+            elif not isinstance(value, date):
+                value = date.fromisoformat(str(value))
+            return value.isoformat()
+        if tc == EdmTypeCode.DateTime:
+            if not isinstance(value, datetime):
+                value = datetime.fromisoformat(str(value))
             if value.tzinfo is not None:
                 raise ValueError(f"value_in_body: DateTime value must not have zone offset (found {value})")
-            return self.percent_encode(value.isoformat())  # colons must be percent-encoded in path segments
+            return value.isoformat()
         if tc == EdmTypeCode.DateTimeOffset and isinstance(value, datetime):
-            # Note: colons must be percent-encoded in path segments
+            if not isinstance(value, datetime):
+                value = datetime.fromisoformat(str(value))
             if value.tzinfo is None:  # some conversion layer (e.g. DB) might have dropped UTC offset
                 return value.isoformat() + "Z"
             return value.isoformat()
         if tc == EdmTypeCode.Duration or tc == EdmTypeCode.Time:
-            if isinstance(value, Decimal):
+            if isinstance(value, Decimal) or isinstance(value, int):
                 return f"PT{value}S"
             if isinstance(value, float):
                 formatted = f"{value:.9f}".rstrip("0").rstrip(".")
                 return f"PT{formatted}S"
-            return value
+            return str(value)
         return str(value)
     
-    def _check_version(self) -> None:
-        version = self._version
-        if version == OData.V2:
-            raise NotImplementedError("OData V2 is not supported yet")
-
     def percent_encode(self, value: Any) -> str:
         return quote(str(value), safe="'+-._~")
 
@@ -299,6 +381,16 @@ class OData:
         encoded = self.percent_encode_in_string(value.replace('\'', '\'\''))
         return f"'{encoded}'"
     
+    def _float_nan_inf(self, value: float) -> str | None:
+        if math.isnan(value):
+            return "NaN"
+        if math.isinf(value):
+            return "INF" if value > 0 else "-INF"
+        return None
+
+    def to_base64(self, data: bytes | bytearray) -> str:
+        return base64.b64encode(bytes(data)).decode("ascii")
+
     def to_base64url(self, data: bytes | bytearray) -> str:
         return base64.urlsafe_b64encode(bytes(data)).decode("ascii").rstrip("=")
 
